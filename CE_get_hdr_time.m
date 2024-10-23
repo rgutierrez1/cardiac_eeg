@@ -33,9 +33,9 @@ for k=1:Number_Files
     SubjectID = filename(1:end-4);
     hdr_time.SubjectID(k) = SubjectID;
     load(filename)
-    ind_start_time = hdr1.starttime;
+    ind_start_time = Firsthdr.starttime;
     hdr_time.hdr_start_time(k) = ind_start_time;
-    hdr_time.hdr_start_date(k) = hdr1.startdate;
+    hdr_time.hdr_start_date(k) = Firsthdr.startdate;
 end
 %%
 filename2 = 'hdr_times.csv';
