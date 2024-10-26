@@ -8,15 +8,14 @@ datapath = '~/all_data/igor_data/catEEG';
 
 addpath(genpath(codepath))
 addpath(genpath(datapath))
-
+addpath(genpath('~/Codes/eeg_general'))
+addpath(genpath("~/Codes/Chronux_2_11"))
 %cd(codepath)
 cd(datapath)
 
 %%
 Archivos = dir('*.mat');  %cargar eeg px
-Number_Files = size(Archivos,1);
-alfas = nan(4, 600, Number_Files); %aqui va una u
-relative_alfas = nan(4,304,Number_Files); %aqui va una u
+number_files = size(Archivos,1);
 
 params.tapers = [3 5];
 params.pad = 0;
@@ -27,57 +26,68 @@ win = 5;                      % window length
 segave = 1;   
 fq_resolution = 2*params.tapers(1)/win(1);
 %%
-for u = 1:Number_Files   %Revisicion px por px
-    filename = Archivos(u).name;
-    load(filename) %aqui va un u
-    fs = hdr1.frequency(1);
+% Make N by 2 matrix of fieldname + value type
+variable_names_types = [["SubjectID", "string"]; ...
+			["minute", "double"]; ...
+            ["alpha_power", "double"]; ...
+			["delta_power", "double"]];
 
-    params.Fs = fs;
+% Make table using fieldnames & value types from above
+EEG_results = table('Size',[number_files,size(variable_names_types,1)],... 
+	'VariableNames', variable_names_types(:,1),...
+	'VariableTypes', variable_names_types(:,2));
+
+
+%%
+kk=1;
+for k = 1:Number_Files                      % Patient 
+    filename = Archivos(k).name;
+    load(filename) 
+    fs = Firsthdr.frequency(1);
+
+    params.Fs = Firsthdr.frequency(1);
     params.fpass = [1 fs/2];
     
     % Cortar el EEG
-    subjectID = filename(1:end-4);
+    subjectID = filename(1:end-12);
     disp(['analyzing subject ' subjectID])
-    filteredRows = time_table(strcmp(time_table.SubjectID, subjectID), :);
-
-    anesthesia_start_time =  filteredRows.Seconds_Awake; 
-    anesthesia_start_index = floor(anesthesia_start_time * fs);
-    data = catEEG(:,anesthesia_start_index:end);
-
+    
     % Datos del paciente
-
+    data = catEEG(2,:);             % We define the second electrode (Fp2)
     window_length = 60;
     mini_window = floor(fs*10);
     minute_duration = floor(fs*60);
     eeg_duration = floor(length(data(1,:))/fs/60);
     
-
-        % Escaneo Electrodos
-    for j = 1:size(data,1)
-        Electrode = data(j,:);  %Electrodo
-        MnE = mean(Electrode);
-        sdE = std(Electrode);
-        V_fisio_max = MnE + sdE*2;
-        V_fisio_min = MnE - sdE*2;
+    MnE = mean(data);
+    sdE = std(data);
+    V_fisio_max = MnE + sdE*2;
+    V_fisio_min = MnE - sdE*2;
     
-        for i = 1:eeg_duration  %minutos
-            index_min = (fs * window_length * (i - 1));
-            index_min = floor(index_min);
-            for k = 1:(minute_duration - mini_window) %intervalos de 10s 
-                start_index = k + (index_min);
-                end_index = k + mini_window - 1 + (index_min);
-                evaluated_data = Electrode(start_index:end_index);
-                
-                if max(evaluated_data) < V_fisio_max && min(evaluated_data) > V_fisio_min
-                    %[alpha_relative_power, alpha_band_power, alpha_peak_f, alpha_peak_p] = mt_alphapower(evaluated_data, win, params, segave);
-                    [alpha_relative_power, alpha_band_power, ~] = mt_alphapower(evaluated_data, win, params, segave);
     
-                    alfas(j, i, u) = alpha_band_power; %aqui va una u
-                    relative_alfas(j, i , u) = alpha_relative_power; %aqui va una u
-                    break;
-                else
-                end
+    for i = 1:eeg_duration  %minutos
+        index_min = (fs * window_length * (i - 1));
+        index_min = floor(index_min);
+        for j = 1:(minute_duration - mini_window) %intervalos de 10s 
+            start_index = j + (index_min);
+            end_index = j + mini_window - 1 + (index_min);
+            evaluated_data = data(start_index:end_index);
+            
+            if max(evaluated_data) < V_fisio_max && min(evaluated_data) > V_fisio_min
+                [alpha_relative_power, alpha_band_power, ~] = mt_alphapower(evaluated_data, win, params, segave);
+                [delta_relative_power, delta_band_power] = mt_deltapower(evaluated_data, win, params, segave);
+               
+                EEG_results.SubjectID(kk) = subjectID;
+                EEG_results.minute(kk) =  i;
+                EEG_results.alpha_power(kk) =  alpha_band_power;
+                EEG_results.delta_power(kk) =  delta_band_power;
+                kk = kk+1;
+                break;
+            else
             end
-         end
-    end
+        end
+     end
 end
+%%
+filename2 = 'cardiac_eeg_results.csv';
+writetable(EEG_results,filename2);
